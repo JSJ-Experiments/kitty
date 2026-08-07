@@ -2,12 +2,12 @@ name: Build Arch package (bold_is_bright)
 
 on:
   schedule:
-    # every 6 hours; patch auto-rebases on top of Arch's kitty version
+    # every 6 hours; auto-rebases the patch on Arch's kitty version
     - cron: '17 */6 * * *'
   workflow_dispatch:
 
 concurrency:
-  group: arch-build-${{ github.ref }}
+  group: arch-build
   cancel-in-progress: true
 
 permissions:
@@ -18,12 +18,12 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     container:
       image: archlinux:latest
-
     steps:
       - name: Install toolchain
         run: |
           pacman -Syu --noconfirm archlinux-keyring
           pacman -S --noconfirm --needed base-devel git go
+          git config --global --add safe.directory '*'
 
       - name: Check out packaging repo
         uses: actions/checkout@v6
@@ -42,33 +42,45 @@ jobs:
           echo "pkgrel=$rel" >> "$GITHUB_OUTPUT"
           echo "ver=$ver" >> "$GITHUB_ENV"
 
-      - name: Fetch upstream kitty tag and apply patch
+      - name: Fetch upstream kitty tag and auto-rebase patch
+        shell: bash
         run: |
           set -euo pipefail
+          ver="${{ steps.archver.outputs.pkgver }}"
           git fetch --tags --force origin
-          git fetch --tags --force https://github.com/kovidgoyal/kitty.git "refs/tags/v${{ steps.archver.outputs.pkgver }}:refs/tags/v${{ steps.archver.outputs.pkgver }}"
-          # Rebuild the patched tree: reset to the Arch-tracked tag, then cherry-pick the feature
-          git checkout -f "v${{ steps.archver.outputs.pkgver }}"
-          git reset --hard "v${{ steps.archver.outputs.pkgver }}"
+          # fetch the exact upstream tag Arch tracks
+          git fetch --tags --force https://github.com/kovidgoyal/kitty.git "refs/tags/v${ver}:refs/tags/v${ver}"
+          # find the bold_is_bright feature commit (exists on this repo's branches)
           feature="$(git log --all --oneline --grep='implement bold_is_bright option' -1 --format='%H')"
           if [ -z "$feature" ]; then
-            echo "bold_is_bright commit not found; falling back to branch tip"
-            git checkout -f bold-is-bright
-          else
-            git cherry-pick "$feature" --allow-empty
-            echo "Patched tree ready"
+            echo "Feature commit not found; build will use current checkout (already patched)"
+            exit 0
           fi
+          # rebase: new branch from the Arch-tracked tag + cherry-pick the feature
+          git checkout -b auto-rebase "v${ver}"
+          if ! git cherry-pick "$feature" --allow-empty; then
+            echo "Cherry-pick had conflicts; trying patch apply fallback"
+            git cherry-pick --abort || true
+            git checkout -f -- .
+            git cherry-pick -m 1 "$feature" || true
+          fi
+          # restore packaging files that only live on master
+          for f in PKGBUILD .github/workflows/arch-build.yml; do
+            git show "master:$f" > "$f" 2>/dev/null || true
+          done
           git log --oneline -3
 
       - name: Update PKGBUILD version to match Arch repo
+        shell: bash
         run: |
           set -euo pipefail
           ver="${{ steps.archver.outputs.pkgver }}"
           rel="${{ steps.archver.outputs.pkgrel }}"
           sed -i "s/^pkgver=.*/pkgver=$ver/" PKGBUILD
           sed -i "s/^pkgrel=.*/pkgrel=$rel/" PKGBUILD
+          echo "PKGBUILD now: pkgver=$ver pkgrel=$rel"
 
-      - name: Build package
+      - name: Build package (x86_64 only)
         shell: bash
         run: |
           set -euo pipefail
@@ -78,7 +90,7 @@ jobs:
           runuser -u builder -- bash -lc '
             set -euo pipefail
             cd "$GITHUB_WORKSPACE"
-            makepkg --syncdeps --noconfirm --cleanbuild --clean 2>&1 | tee /tmp/makepkg.log
+            makepkg --syncdeps --noconfirm --cleanbuild --clean
           '
 
       - name: Collect build outputs
@@ -119,7 +131,7 @@ jobs:
           generate_release_notes: false
           prerelease: true
           body: |
-            Arch Linux package build for:
+            Arch Linux x86_64 package build for:
             - Upstream: https://github.com/kovidgoyal/kitty (v${{ steps.archver.outputs.pkgver }})
             - Patch: bold_is_bright (https://github.com/ckabalan/kitty/commit/18876527f575cf995aa664bf2da22d9c13f28f58)
             - Arch repo version: ${{ steps.archver.outputs.pkgver }}-${{ steps.archver.outputs.pkgrel }}
