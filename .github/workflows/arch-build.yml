@@ -50,11 +50,14 @@ jobs:
           git fetch --tags --force origin
           # fetch the exact upstream tag Arch tracks
           git fetch --tags --force https://github.com/kovidgoyal/kitty.git "refs/tags/v${ver}:refs/tags/v${ver}"
+          # extract the committed patch from master BEFORE resetting away from it
+          git show "master:bold-is-bright.patch" > /tmp/bold-is-bright.patch
+          test -s /tmp/bold-is-bright.patch
           # hard reset to the Arch-tracked upstream tag (fresh unpatched tree)
           git checkout -f "v${ver}"
           git reset --hard "v${ver}"
           # apply the committed bold_is_bright patch onto the upstream tree
-          git apply --3way bold-is-bright.patch
+          git apply --3way /tmp/bold-is-bright.patch
           # HARD VERIFY the feature actually landed (fail loudly if not)
           grep -q "bold_is_bright" kitty/cell_vertex.glsl
           grep -q "brighten_color" kitty/cell_vertex.glsl
