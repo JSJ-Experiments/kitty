@@ -43,6 +43,7 @@ makedepends=(
     'python-sphinx-copybutton'
     'python-sphinx-inline-tabs'
     'python-sphinxext-opengraph'
+    'python-sphinx-furo'
     'ttf-nerd-fonts-symbols-mono'
     'wayland-protocols'
 )
