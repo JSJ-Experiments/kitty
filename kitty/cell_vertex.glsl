@@ -329,7 +329,7 @@ void main() {
     int bg_index = 1 - fg_index;
     int mark = int(text_attrs >> MARK_SHIFT) & MARK_MASK;
     uint has_mark = uint(step(1, float(mark)));
-    uint bg_as_uint = resolve_color(brighten_color(colors[bg_index], is_bold), default_colors[bg_index]);
+    uint bg_as_uint = resolve_color(colors[bg_index], default_colors[bg_index]);
     bg_as_uint = has_mark * color_table[NUM_COLORS + mark - 1] + (BIT_MASK - has_mark) * bg_as_uint;
     float cell_has_default_bg = 1.f - step(1.f, abs(float(bg_as_uint - bg_colors0))); // 1 if has default bg else 0
     vec3 bg = color_to_vec(bg_as_uint);
