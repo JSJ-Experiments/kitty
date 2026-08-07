@@ -57,6 +57,11 @@ to select fonts manually, read the :ref:`font specification syntax <font_spec_sy
 
 opt('bold_font', 'auto', option_type='parse_font_spec')
 
+opt('bold_is_bright', 'no',
+    option_type='to_bool', ctype='bool',
+    long_text='Display bold text with bright colors'
+    )
+
 opt('italic_font', 'auto', option_type='parse_font_spec')
 
 opt('bold_italic_font', 'auto', option_type='parse_font_spec')

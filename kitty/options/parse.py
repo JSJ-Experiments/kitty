@@ -115,6 +115,9 @@ class Parser:
     def bold_font(self, val: str, ans: dict[str, typing.Any]) -> None:
         ans['bold_font'] = parse_font_spec(val)
 
+    def bold_is_bright(self, val: str, ans: dict[str, typing.Any]) -> None:
+        ans['bold_is_bright'] = to_bool(val)
+
     def bold_italic_font(self, val: str, ans: dict[str, typing.Any]) -> None:
         ans['bold_italic_font'] = parse_font_spec(val)
 

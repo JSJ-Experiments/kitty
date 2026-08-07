@@ -1417,7 +1417,7 @@ PYWRAP1(patch_global_colors) {
         else if (PyLong_Check(val)) OPT(name) = PyLong_AsLong(val); \
     } \
 }
-    P(active_border_color); P(inactive_border_color); P(bell_border_color); P(tab_bar_background);
+    P(active_border_color); P(inactive_border_color); P(bell_border_color); P(bold_is_bright); P(tab_bar_background);
     P(tab_bar_margin_color); P(macos_titlebar_color); P(wayland_titlebar_color);
     P(scrollbar_handle_color); P(scrollbar_track_color);
     if (configured) {

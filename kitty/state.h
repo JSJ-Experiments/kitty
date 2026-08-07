@@ -117,6 +117,7 @@ typedef struct Options {
     bool resize_in_steps;
     bool sync_to_monitor;
     bool close_on_child_death;
+    bool bold_is_bright;
     bool window_alert_on_bell;
     bool macos_dock_badge_on_bell;
     bool debug_keyboard;

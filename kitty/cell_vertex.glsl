@@ -12,6 +12,7 @@ layout(std140) uniform CellRenderData {
     uint columns, lines, sprites_xnum, sprites_ynum, cursor_shape, cell_width, cell_height;
     uint cursor_x1, cursor_x2, cursor_y1, cursor_y2;
     float cursor_opacity, inactive_text_alpha, dim_opacity, blink_opacity;
+    uint bold_is_bright;
 
     // must have unique entries with 0 being default_bg and unset being UINT32_MAX
     uint bg_colors0, bg_colors1, bg_colors2, bg_colors3, bg_colors4, bg_colors5, bg_colors6, bg_colors7;
@@ -94,6 +95,22 @@ uint resolve_color(uint c, uint defval) {
     uint is_two = one_if_equal_zero_otherwise(t, 2);
     uint is_neither_one_nor_two = 1u - is_one - is_two;
     return is_one * color_table[(c >> 8) & BYTE_MASK] + is_two * (c >> 8) + is_neither_one_nor_two * defval;
+}
+
+uint byte_to_bool(uint n) {
+	uint n1 = (n >> 1) | n;
+	uint n2 = (n1 >> 2) | n1;
+	uint n3 = (n2 >> 4) | n2;
+	return n3 & 1u;
+}
+
+uint brighten_color(uint c, uint is_bold) {
+	uint table_idx = (c >> 8) & 0xFFu;
+	uint is_table_color = c & 1u;
+	uint is_rgb_color = byte_to_bool(c & 0xFEu);
+	uint is_8bit_color = byte_to_bool(table_idx & 0xF8u);
+	uint should_brighten = bold_is_bright * is_bold * (1u >> (is_rgb_color + is_8bit_color)) * is_table_color;
+	return c | (0x800u * should_brighten);
 }
 
 vec3 to_color(uint c, uint defval) {
@@ -305,17 +322,18 @@ void main() {
     // set cell color indices {{{
     uvec2 default_colors = uvec2(default_fg, bg_colors0);
     uint text_attrs = sprite_idx[1];
+    uint is_bold = ((text_attrs >> BOLD_SHIFT) & BIT_MASK);
     uint is_reversed = ((text_attrs >> REVERSE_SHIFT) & BIT_MASK);
     uint is_inverted = is_reversed + inverted;
     int fg_index = fg_index_map[is_inverted];
     int bg_index = 1 - fg_index;
     int mark = int(text_attrs >> MARK_SHIFT) & MARK_MASK;
     uint has_mark = uint(step(1, float(mark)));
-    uint bg_as_uint = resolve_color(colors[bg_index], default_colors[bg_index]);
+    uint bg_as_uint = resolve_color(brighten_color(colors[bg_index], is_bold), default_colors[bg_index]);
     bg_as_uint = has_mark * color_table[NUM_COLORS + mark - 1] + (BIT_MASK - has_mark) * bg_as_uint;
     float cell_has_default_bg = 1.f - step(1.f, abs(float(bg_as_uint - bg_colors0))); // 1 if has default bg else 0
     vec3 bg = color_to_vec(bg_as_uint);
-    uint fg_as_uint = resolve_color(colors[fg_index], default_colors[fg_index]);
+    uint fg_as_uint = resolve_color(brighten_color(colors[fg_index], is_bold), default_colors[fg_index]);
     fg_as_uint = has_mark * color_table[NUM_COLORS + MARK_MASK + mark] + (1u - has_mark) * fg_as_uint;
     vec3 foreground = color_to_vec(fg_as_uint);
     CellData cell_data = set_vertex_position(foreground, bg);

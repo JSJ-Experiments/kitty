@@ -37,6 +37,7 @@ from .constants import (
     wakeup_io_loop,
 )
 from .fast_data_types import (
+    BOLD,
     CURSOR_BEAM,
     CURSOR_BLOCK,
     CURSOR_UNDERLINE,

@@ -11,6 +11,7 @@ from .constants import read_kitty_resource
 from .fast_data_types import (
     BGIMAGE_PROGRAM,
     BLINK,
+    BOLD,
     BLIT_PROGRAM,
     CELL_BG_PROGRAM,
     CELL_FG_PROGRAM,
@@ -178,6 +179,7 @@ class LoadShaderPrograms:
                 REVERSE_SHIFT=REVERSE,
                 STRIKE_SHIFT=STRIKETHROUGH,
                 DIM_SHIFT=DIM,
+                BOLD_SHIFT=BOLD,
                 BLINK_SHIFT=BLINK,
                 DECORATION_SHIFT=DECORATION,
                 MARK_SHIFT=MARK,

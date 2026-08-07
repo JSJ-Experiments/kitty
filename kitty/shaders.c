@@ -471,6 +471,7 @@ cell_update_uniform_block(ssize_t vao_idx, Screen *screen, int uniform_buffer, i
         GLuint columns, lines, sprites_xnum, sprites_ynum, cursor_shape, cell_width, cell_height;
         GLuint cursor_x1, cursor_x2, cursor_y1, cursor_y2;
         GLfloat cursor_opacity, inactive_text_alpha, dim_opacity, blink_opacity;
+        GLuint bold_is_bright;
 
         GLuint bg_colors0, bg_colors1, bg_colors2, bg_colors3, bg_colors4, bg_colors5, bg_colors6, bg_colors7;
         GLfloat bg_opacities0, bg_opacities1, bg_opacities2, bg_opacities3, bg_opacities4, bg_opacities5, bg_opacities6, bg_opacities7;
@@ -486,6 +487,7 @@ cell_update_uniform_block(ssize_t vao_idx, Screen *screen, int uniform_buffer, i
 #define COLOR(name) colorprofile_to_color(cp, cp->overridden.name, cp->configured.name).rgb
     rd->default_fg = COLOR(default_fg);
     rd->highlight_fg = COLOR(highlight_fg); rd->highlight_bg = COLOR(highlight_bg);
+    rd->bold_is_bright = OPT(bold_is_bright) ? 1 : 0;
     rd->extra_cursor_fg = screen->extra_cursors.color.text.val;
     rd->extra_cursor_bg = screen->extra_cursors.color.cursor.val;
     rd->bg_colors0 = COLOR(default_bg);
