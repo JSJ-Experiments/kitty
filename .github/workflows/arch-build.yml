@@ -35,35 +35,38 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ver="$(curl -s https://archlinux.org/packages/extra/x86_64/kitty/json/ | python3 -c 'import json,sys; print(json.load(sys.stdin)["pkgver"])')"
-          rel="$(curl -s https://archlinux.org/packages/extra/x86_64/kitty/json/ | python3 -c 'import json,sys; print(json.load(sys.stdin)["pkgrel"])')"
+          meta="$(curl -s https://archlinux.org/packages/extra/x86_64/kitty/json/)"
+          ver="$(printf '%s' "$meta" | python3 -c 'import json,sys; print(json.load(sys.stdin)["pkgver"])')"
+          rel="$(printf '%s' "$meta" | python3 -c 'import json,sys; print(json.load(sys.stdin)["pkgrel"])')"
           echo "pkgver=$ver" >> "$GITHUB_OUTPUT"
           echo "pkgrel=$rel" >> "$GITHUB_OUTPUT"
           echo "ver=$ver" >> "$GITHUB_ENV"
 
-      - name: Fetch upstream kitty tag
-        run: |
-          git fetch --tags --force origin
-          git fetch --tags --force https://github.com/kovidgoyal/kitty.git "refs/tags/v${{ steps.archver.outputs.pkgver }}:refs/tags/v${{ steps.archver.outputs.pkgver }}"
-          git checkout -f "v${{ steps.archver.outputs.pkgver }}"
-          git log --oneline -1
-
-      - name: Auto-rebase bold_is_bright patch
+      - name: Fetch upstream kitty tag and apply patch
         run: |
           set -euo pipefail
-          # re-apply the patch (cherry-pick the feature commit) on top of the Arch-tracked tag
-          commit="$(git log --all --oneline --grep='implement bold_is_bright option' -1 --format='%H')"
-          if [ -z "$commit" ]; then
-            echo "Could not find bold_is_bright commit; falling back to master branch"
+          git fetch --tags --force origin
+          git fetch --tags --force https://github.com/kovidgoyal/kitty.git "refs/tags/v${{ steps.archver.outputs.pkgver }}:refs/tags/v${{ steps.archver.outputs.pkgver }}"
+          # Rebuild the patched tree: reset to the Arch-tracked tag, then cherry-pick the feature
+          git checkout -f "v${{ steps.archver.outputs.pkgver }}"
+          git reset --hard "v${{ steps.archver.outputs.pkgver }}"
+          feature="$(git log --all --oneline --grep='implement bold_is_bright option' -1 --format='%H')"
+          if [ -z "$feature" ]; then
+            echo "bold_is_bright commit not found; falling back to branch tip"
             git checkout -f bold-is-bright
-            exit 0
+          else
+            git cherry-pick "$feature" --allow-empty
+            echo "Patched tree ready"
           fi
-          git cherry-pick "$commit" || {
-            echo "Cherry-pick failed; attempting 3-way merge"
-            git cherry-pick --abort || true
-            git checkout -f -- .
-            git cherry-pick -m 1 "$commit" || true
-          }
+          git log --oneline -3
+
+      - name: Update PKGBUILD version to match Arch repo
+        run: |
+          set -euo pipefail
+          ver="${{ steps.archver.outputs.pkgver }}"
+          rel="${{ steps.archver.outputs.pkgrel }}"
+          sed -i "s/^pkgver=.*/pkgver=$ver/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=$rel/" PKGBUILD
 
       - name: Build package
         shell: bash
@@ -75,8 +78,6 @@ jobs:
           runuser -u builder -- bash -lc '
             set -euo pipefail
             cd "$GITHUB_WORKSPACE"
-            # skip makepkg package() when just verifying the patch builds
-            python3 setup.py --version 2>/dev/null || true
             makepkg --syncdeps --noconfirm --cleanbuild --clean 2>&1 | tee /tmp/makepkg.log
           '
 

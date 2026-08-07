@@ -1,7 +1,8 @@
 # Maintainer: JadenJSJ <jadenjsj@proton.me>
 # Based on the official Arch Linux kitty PKGBUILD:
 # https://gitlab.archlinux.org/archlinux/packaging/packages/kitty
-# Modified: build from JSJ-Experiments/kitty fork with bold_is_bright patch
+# Builds from the checked-out JSJ-Experiments/kitty tree (bold_is_bright patch applied by CI)
+# Version tracks the Arch Linux extra/kitty package.
 
 pkgbase=kitty
 pkgname=(kitty kitty-terminfo kitty-shell-integration)
@@ -42,11 +43,11 @@ makedepends=(
     'wayland-protocols'
 )
 options=("!lto")
-source=("https://github.com/JSJ-Experiments/${pkgbase}/archive/refs/tags/v${pkgver}.tar.gz")
-b2sums=('SKIP')
+source=("$pkgbase-$pkgver::file://$PWD")
+sha256sums=('SKIP')
 
 build() {
-    cd "$pkgname-$pkgver"
+    cd "$pkgbase-$pkgver"
 
     export CGO_CPPFLAGS="${CPPFLAGS}"
     export CGO_CFLAGS="${CFLAGS}"
