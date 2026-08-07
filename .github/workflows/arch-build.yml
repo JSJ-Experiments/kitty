@@ -89,7 +89,7 @@ jobs:
           # Write to /tmp first (tar fails if it writes inside the dir it reads),
           # then copy into the workspace where makepkg looks for local sources.
           tar --exclude=.git --exclude=dist --exclude=src --exclude=pkg --exclude='*.tar.gz' \
-            -czf "/tmp/kitty-$ver.tar.gz" -C "$GITHUB_WORKSPACE" .
+            -czf "/tmp/kitty-$ver.tar.gz" -C "$GITHUB_WORKSPACE" --transform="s,^\./,kitty-$ver/," .
           cp "/tmp/kitty-$ver.tar.gz" "$GITHUB_WORKSPACE/"
           ls -la "$GITHUB_WORKSPACE/kitty-$ver.tar.gz"
           useradd --create-home --shell /bin/bash builder
