@@ -1,0 +1,236 @@
+diff --git a/kitty/cell_defines.glsl b/kitty/cell_defines.glsl
+index ec6459548..a202b207a 100644
+--- a/kitty/cell_defines.glsl
++++ b/kitty/cell_defines.glsl
+@@ -3,6 +3,7 @@
+ #define FG_OVERRIDE_ALGO {FG_OVERRIDE_ALGO}
+ #define TEXT_NEW_GAMMA {TEXT_NEW_GAMMA}
+ 
++#define BOLD_SHIFT {BOLD_SHIFT}
+ #define DECORATION_SHIFT {DECORATION_SHIFT}
+ #define REVERSE_SHIFT {REVERSE_SHIFT}
+ #define STRIKE_SHIFT {STRIKE_SHIFT}
+diff --git a/kitty/cell_vertex.glsl b/kitty/cell_vertex.glsl
+index cabed1495..e713d7dfa 100644
+--- a/kitty/cell_vertex.glsl
++++ b/kitty/cell_vertex.glsl
+@@ -12,6 +12,7 @@ layout(std140) uniform CellRenderData {
+     uint columns, lines, sprites_xnum, sprites_ynum, cursor_shape, cell_width, cell_height;
+     uint cursor_x1, cursor_x2, cursor_y1, cursor_y2;
+     float cursor_opacity, inactive_text_alpha, dim_opacity, blink_opacity;
++    uint bold_is_bright;
+ 
+     // must have unique entries with 0 being default_bg and unset being UINT32_MAX
+     uint bg_colors0, bg_colors1, bg_colors2, bg_colors3, bg_colors4, bg_colors5, bg_colors6, bg_colors7;
+@@ -96,6 +97,22 @@ uint resolve_color(uint c, uint defval) {
+     return is_one * color_table[(c >> 8) & BYTE_MASK] + is_two * (c >> 8) + is_neither_one_nor_two * defval;
+ }
+ 
++uint byte_to_bool(uint n) {
++	uint n1 = (n >> 1) | n;
++	uint n2 = (n1 >> 2) | n1;
++	uint n3 = (n2 >> 4) | n2;
++	return n3 & 1u;
++}
++
++uint brighten_color(uint c, uint is_bold) {
++	uint table_idx = (c >> 8) & 0xFFu;
++	uint is_table_color = c & 1u;
++	uint is_rgb_color = byte_to_bool(c & 0xFEu);
++	uint is_8bit_color = byte_to_bool(table_idx & 0xF8u);
++	uint should_brighten = bold_is_bright * is_bold * (1u >> (is_rgb_color + is_8bit_color)) * is_table_color;
++	return c | (0x800u * should_brighten);
++}
++
+ vec3 to_color(uint c, uint defval) {
+     return color_to_vec(resolve_color(c, defval));
+ }
+@@ -305,6 +322,7 @@ void main() {
+     // set cell color indices {{{
+     uvec2 default_colors = uvec2(default_fg, bg_colors0);
+     uint text_attrs = sprite_idx[1];
++    uint is_bold = ((text_attrs >> BOLD_SHIFT) & BIT_MASK);
+     uint is_reversed = ((text_attrs >> REVERSE_SHIFT) & BIT_MASK);
+     uint is_inverted = is_reversed + inverted;
+     int fg_index = fg_index_map[is_inverted];
+@@ -315,7 +333,7 @@ void main() {
+     bg_as_uint = has_mark * color_table[NUM_COLORS + mark - 1] + (BIT_MASK - has_mark) * bg_as_uint;
+     float cell_has_default_bg = 1.f - step(1.f, abs(float(bg_as_uint - bg_colors0))); // 1 if has default bg else 0
+     vec3 bg = color_to_vec(bg_as_uint);
+-    uint fg_as_uint = resolve_color(colors[fg_index], default_colors[fg_index]);
++    uint fg_as_uint = resolve_color(brighten_color(colors[fg_index], is_bold), default_colors[fg_index]);
+     fg_as_uint = has_mark * color_table[NUM_COLORS + MARK_MASK + mark] + (1u - has_mark) * fg_as_uint;
+     vec3 foreground = color_to_vec(fg_as_uint);
+     CellData cell_data = set_vertex_position(foreground, bg);
+diff --git a/kitty/fast_data_types.pyi b/kitty/fast_data_types.pyi
+index 70b85c71b..e1edd3e6e 100644
+--- a/kitty/fast_data_types.pyi
++++ b/kitty/fast_data_types.pyi
+@@ -286,6 +286,7 @@ CELL_BG_PROGRAM: int
+ BLIT_PROGRAM: int
+ SCREENSHOT_PROGRAM: int
+ ROUNDED_RECT_PROGRAM: int
++BOLD: int
+ DECORATION: int
+ BLINK: int
+ DIM: int
+diff --git a/kitty/options/definition.py b/kitty/options/definition.py
+index 3ef839681..c0c31431a 100644
+--- a/kitty/options/definition.py
++++ b/kitty/options/definition.py
+@@ -57,6 +57,11 @@
+ 
+ opt('bold_font', 'auto', option_type='parse_font_spec')
+ 
++opt('bold_is_bright', 'no',
++    option_type='to_bool', ctype='bool',
++    long_text='Display bold text with bright colors'
++    )
++
+ opt('italic_font', 'auto', option_type='parse_font_spec')
+ 
+ opt('bold_italic_font', 'auto', option_type='parse_font_spec')
+diff --git a/kitty/options/parse.py b/kitty/options/parse.py
+index 6f99de673..bef296e0f 100644
+--- a/kitty/options/parse.py
++++ b/kitty/options/parse.py
+@@ -115,6 +115,9 @@ def bell_path(self, val: str, ans: dict[str, typing.Any]) -> None:
+     def bold_font(self, val: str, ans: dict[str, typing.Any]) -> None:
+         ans['bold_font'] = parse_font_spec(val)
+ 
++    def bold_is_bright(self, val: str, ans: dict[str, typing.Any]) -> None:
++        ans['bold_is_bright'] = to_bool(val)
++
+     def bold_italic_font(self, val: str, ans: dict[str, typing.Any]) -> None:
+         ans['bold_italic_font'] = parse_font_spec(val)
+ 
+diff --git a/kitty/options/to-c-generated.h b/kitty/options/to-c-generated.h
+index d209fb78d..3ccf6a9e3 100644
+--- a/kitty/options/to-c-generated.h
++++ b/kitty/options/to-c-generated.h
+@@ -18,6 +18,19 @@ convert_from_opts_font_size(PyObject *py_opts, Options *opts) {
+     Py_DECREF(ret);
+ }
+ 
++static void
++convert_from_python_bold_is_bright(PyObject *val, Options *opts) {
++    opts->bold_is_bright = PyObject_IsTrue(val);
++}
++
++static void
++convert_from_opts_bold_is_bright(PyObject *py_opts, Options *opts) {
++    PyObject *ret = PyObject_GetAttrString(py_opts, "bold_is_bright");
++    if (ret == NULL) return;
++    convert_from_python_bold_is_bright(ret, opts);
++    Py_DECREF(ret);
++}
++
+ static void
+ convert_from_python_force_ltr(PyObject *val, Options *opts) {
+     opts->force_ltr = PyObject_IsTrue(val);
+@@ -1530,6 +1543,8 @@ static bool
+ convert_opts_from_python_opts(PyObject *py_opts, Options *opts) {
+     convert_from_opts_font_size(py_opts, opts);
+     if (PyErr_Occurred()) return false;
++    convert_from_opts_bold_is_bright(py_opts, opts);
++    if (PyErr_Occurred()) return false;
+     convert_from_opts_force_ltr(py_opts, opts);
+     if (PyErr_Occurred()) return false;
+     convert_from_opts_disable_ligatures(py_opts, opts);
+diff --git a/kitty/options/types.py b/kitty/options/types.py
+index cf7009fb1..d6091c9ff 100644
+--- a/kitty/options/types.py
++++ b/kitty/options/types.py
+@@ -67,6 +67,7 @@
+     'bell_on_tab',
+     'bell_path',
+     'bold_font',
++    'bold_is_bright',
+     'bold_italic_font',
+     'box_drawing_scale',
+     'clear_all_mouse_actions',
+@@ -544,6 +545,7 @@ class Options:
+     bell_on_tab: str = '🔔 '
+     bell_path: str | None = None
+     bold_font: FontSpec = FontSpec(family=None, style=None, postscript_name=None, full_name=None, system='auto', axes=(), variable_name=None, features=(), created_from_string='auto')
++    bold_is_bright: bool = False
+     bold_italic_font: FontSpec = FontSpec(family=None, style=None, postscript_name=None, full_name=None, system='auto', axes=(), variable_name=None, features=(), created_from_string='auto')
+     box_drawing_scale: tuple[float, float, float, float] = (0.001, 1.0, 1.5, 2.0)
+     clear_all_mouse_actions: bool = False
+diff --git a/kitty/shaders.c b/kitty/shaders.c
+index 8d9913642..0473e27c2 100644
+--- a/kitty/shaders.c
++++ b/kitty/shaders.c
+@@ -471,6 +471,7 @@ cell_update_uniform_block(ssize_t vao_idx, Screen *screen, int uniform_buffer, i
+         GLuint columns, lines, sprites_xnum, sprites_ynum, cursor_shape, cell_width, cell_height;
+         GLuint cursor_x1, cursor_x2, cursor_y1, cursor_y2;
+         GLfloat cursor_opacity, inactive_text_alpha, dim_opacity, blink_opacity;
++        GLuint bold_is_bright;
+ 
+         GLuint bg_colors0, bg_colors1, bg_colors2, bg_colors3, bg_colors4, bg_colors5, bg_colors6, bg_colors7;
+         GLfloat bg_opacities0, bg_opacities1, bg_opacities2, bg_opacities3, bg_opacities4, bg_opacities5, bg_opacities6, bg_opacities7;
+@@ -486,6 +487,7 @@ cell_update_uniform_block(ssize_t vao_idx, Screen *screen, int uniform_buffer, i
+ #define COLOR(name) colorprofile_to_color(cp, cp->overridden.name, cp->configured.name).rgb
+     rd->default_fg = COLOR(default_fg);
+     rd->highlight_fg = COLOR(highlight_fg); rd->highlight_bg = COLOR(highlight_bg);
++    rd->bold_is_bright = OPT(bold_is_bright) ? 1 : 0;
+     rd->extra_cursor_fg = screen->extra_cursors.color.text.val;
+     rd->extra_cursor_bg = screen->extra_cursors.color.cursor.val;
+     rd->bg_colors0 = COLOR(default_bg);
+diff --git a/kitty/shaders.py b/kitty/shaders.py
+index 661adc6b1..947d195d5 100644
+--- a/kitty/shaders.py
++++ b/kitty/shaders.py
+@@ -11,6 +11,7 @@
+ from .fast_data_types import (
+     BGIMAGE_PROGRAM,
+     BLINK,
++    BOLD,
+     BLIT_PROGRAM,
+     CELL_BG_PROGRAM,
+     CELL_FG_PROGRAM,
+@@ -178,6 +179,7 @@ def __call__(self, allow_recompile: bool = False) -> None:
+                 REVERSE_SHIFT=REVERSE,
+                 STRIKE_SHIFT=STRIKETHROUGH,
+                 DIM_SHIFT=DIM,
++                BOLD_SHIFT=BOLD,
+                 BLINK_SHIFT=BLINK,
+                 DECORATION_SHIFT=DECORATION,
+                 MARK_SHIFT=MARK,
+diff --git a/kitty/state.c b/kitty/state.c
+index 56e08965a..a17102fd2 100644
+--- a/kitty/state.c
++++ b/kitty/state.c
+@@ -1417,7 +1417,7 @@ PYWRAP1(patch_global_colors) {
+         else if (PyLong_Check(val)) OPT(name) = PyLong_AsLong(val); \
+     } \
+ }
+-    P(active_border_color); P(inactive_border_color); P(bell_border_color); P(tab_bar_background);
++    P(active_border_color); P(inactive_border_color); P(bell_border_color); P(bold_is_bright); P(tab_bar_background);
+     P(tab_bar_margin_color); P(macos_titlebar_color); P(wayland_titlebar_color);
+     P(scrollbar_handle_color); P(scrollbar_track_color);
+     if (configured) {
+diff --git a/kitty/state.h b/kitty/state.h
+index 77a15990c..99c73e99f 100644
+--- a/kitty/state.h
++++ b/kitty/state.h
+@@ -117,6 +117,7 @@ typedef struct Options {
+     bool resize_in_steps;
+     bool sync_to_monitor;
+     bool close_on_child_death;
++    bool bold_is_bright;
+     bool window_alert_on_bell;
+     bool macos_dock_badge_on_bell;
+     bool debug_keyboard;
+diff --git a/kitty/window.py b/kitty/window.py
+index aa1096d1a..a90bf7331 100644
+--- a/kitty/window.py
++++ b/kitty/window.py
+@@ -37,6 +37,7 @@
+     wakeup_io_loop,
+ )
+ from .fast_data_types import (
++    BOLD,
+     CURSOR_BEAM,
+     CURSOR_BLOCK,
+     CURSOR_UNDERLINE,
