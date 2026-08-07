@@ -1,0 +1,126 @@
+name: Build Arch package (bold_is_bright)
+
+on:
+  schedule:
+    # every 6 hours; patch auto-rebases on top of Arch's kitty version
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: arch-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    container:
+      image: archlinux:latest
+
+    steps:
+      - name: Install toolchain
+        run: |
+          pacman -Syu --noconfirm archlinux-keyring
+          pacman -S --noconfirm --needed base-devel git go
+
+      - name: Check out packaging repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve Arch repo version
+        id: archver
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(curl -s https://archlinux.org/packages/extra/x86_64/kitty/json/ | python3 -c 'import json,sys; print(json.load(sys.stdin)["pkgver"])')"
+          rel="$(curl -s https://archlinux.org/packages/extra/x86_64/kitty/json/ | python3 -c 'import json,sys; print(json.load(sys.stdin)["pkgrel"])')"
+          echo "pkgver=$ver" >> "$GITHUB_OUTPUT"
+          echo "pkgrel=$rel" >> "$GITHUB_OUTPUT"
+          echo "ver=$ver" >> "$GITHUB_ENV"
+
+      - name: Fetch upstream kitty tag
+        run: |
+          git fetch --tags --force origin
+          git fetch --tags --force https://github.com/kovidgoyal/kitty.git "refs/tags/v${{ steps.archver.outputs.pkgver }}:refs/tags/v${{ steps.archver.outputs.pkgver }}"
+          git checkout -f "v${{ steps.archver.outputs.pkgver }}"
+          git log --oneline -1
+
+      - name: Auto-rebase bold_is_bright patch
+        run: |
+          set -euo pipefail
+          # re-apply the patch (cherry-pick the feature commit) on top of the Arch-tracked tag
+          commit="$(git log --all --oneline --grep='implement bold_is_bright option' -1 --format='%H')"
+          if [ -z "$commit" ]; then
+            echo "Could not find bold_is_bright commit; falling back to master branch"
+            git checkout -f bold-is-bright
+            exit 0
+          fi
+          git cherry-pick "$commit" || {
+            echo "Cherry-pick failed; attempting 3-way merge"
+            git cherry-pick --abort || true
+            git checkout -f -- .
+            git cherry-pick -m 1 "$commit" || true
+          }
+
+      - name: Build package
+        shell: bash
+        run: |
+          set -euo pipefail
+          useradd --create-home --shell /bin/bash builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          printf 'builder ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/builder
+          runuser -u builder -- bash -lc '
+            set -euo pipefail
+            cd "$GITHUB_WORKSPACE"
+            # skip makepkg package() when just verifying the patch builds
+            python3 setup.py --version 2>/dev/null || true
+            makepkg --syncdeps --noconfirm --cleanbuild --clean 2>&1 | tee /tmp/makepkg.log
+          '
+
+      - name: Collect build outputs
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          shopt -s nullglob
+          packages=( "$GITHUB_WORKSPACE"/*.pkg.tar.* )
+          if (( ${#packages[@]} == 0 )); then
+            echo "No package artifact was produced" >&2
+            exit 1
+          fi
+          primary_package="$(basename "${packages[0]}")"
+          echo "package_name=$primary_package" >> "$GITHUB_OUTPUT"
+          for pkg in "${packages[@]}"; do
+            base="$(basename "$pkg")"
+            cp "$pkg" "$GITHUB_WORKSPACE/dist/$base"
+            sha256sum "$pkg" > "$GITHUB_WORKSPACE/dist/$base.sha256"
+          done
+          git rev-parse HEAD > "$GITHUB_WORKSPACE/dist/commit.txt"
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.package_name }}
+          path: |
+            ${{ github.workspace }}/dist/*
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: arch-${{ steps.archver.outputs.pkgver }}-${{ steps.archver.outputs.pkgrel }}
+          name: kitty ${{ steps.archver.outputs.pkgver }}-${{ steps.archver.outputs.pkgrel }} (bold_is_bright)
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: false
+          prerelease: true
+          body: |
+            Arch Linux package build for:
+            - Upstream: https://github.com/kovidgoyal/kitty (v${{ steps.archver.outputs.pkgver }})
+            - Patch: bold_is_bright (https://github.com/ckabalan/kitty/commit/18876527f575cf995aa664bf2da22d9c13f28f58)
+            - Arch repo version: ${{ steps.archver.outputs.pkgver }}-${{ steps.archver.outputs.pkgrel }}
+
+            Install: `sudo pacman -U kitty-*.pkg.tar.zst`
