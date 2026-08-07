@@ -130,6 +130,13 @@ jobs:
             ${{ github.workspace }}/dist/*
           if-no-files-found: error
 
+      - name: Reset previous release (avoid stale assets)
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="arch-${{ steps.archver.outputs.pkgver }}-${{ steps.archver.outputs.pkgrel }}"
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -138,7 +145,6 @@ jobs:
           name: kitty ${{ steps.archver.outputs.pkgver }}-${{ steps.archver.outputs.pkgrel }} (bold_is_bright)
           target_commitish: ${{ github.sha }}
           generate_release_notes: false
-          prerelease: true
           body: |
             Arch Linux x86_64 package build for:
             - Upstream: https://github.com/kovidgoyal/kitty (v${{ steps.archver.outputs.pkgver }})

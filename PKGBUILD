@@ -47,7 +47,7 @@ makedepends=(
     'ttf-nerd-fonts-symbols-mono'
     'wayland-protocols'
 )
-options=("!lto")
+options=("!lto" "!debug")
 # local tarball created by CI next to this PKGBUILD from the patched checkout
 source=("$pkgbase-$pkgver.tar.gz")
 sha256sums=('SKIP')
