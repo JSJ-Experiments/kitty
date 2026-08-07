@@ -39,6 +39,7 @@ makedepends=(
     'libxinerama'
     'libxrandr'
     'simde'
+    'python-sphinx'
     'ttf-nerd-fonts-symbols-mono'
     'wayland-protocols'
 )
