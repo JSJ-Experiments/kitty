@@ -50,22 +50,25 @@ jobs:
           git fetch --tags --force origin
           # fetch the exact upstream tag Arch tracks
           git fetch --tags --force https://github.com/kovidgoyal/kitty.git "refs/tags/v${ver}:refs/tags/v${ver}"
-          # find the bold_is_bright feature commit (exists on this repo's branches)
-          feature="$(git log --all --oneline --grep='implement bold_is_bright option' -1 --format='%H')"
-          if [ -z "$feature" ]; then
-            echo "Feature commit not found; build will use current checkout (already patched)"
-            exit 0
+          # hard reset to the Arch-tracked upstream tag (fresh unpatched tree)
+          git checkout -f "v${ver}"
+          git reset --hard "v${ver}"
+          # apply the committed bold_is_bright patch onto the upstream tree
+          git apply --3way bold-is-bright.patch
+          # HARD VERIFY the feature actually landed (fail loudly if not)
+          grep -q "bold_is_bright" kitty/cell_vertex.glsl
+          grep -q "brighten_color" kitty/cell_vertex.glsl
+          # sanity: fg is brightened, bg is NOT
+          grep -q "fg_as_uint = resolve_color(brighten_color" kitty/cell_vertex.glsl
+          if grep -q "bg_as_uint = resolve_color(brighten_color" kitty/cell_vertex.glsl; then
+            echo "ERROR: background is being brightened (bg fix missing)" >&2
+            exit 1
           fi
-          # rebase: new branch from the Arch-tracked tag + cherry-pick the feature
-          git checkout -b auto-rebase "v${ver}"
-          if ! git cherry-pick "$feature" --allow-empty; then
-            echo "Cherry-pick had conflicts; trying patch apply fallback"
-            git cherry-pick --abort || true
-            git checkout -f -- .
-            git cherry-pick -m 1 "$feature" || true
-          fi
+          # commit the patched tree so makepkg builds the right thing
+          git add -A
+          git -c user.name='builder' -c user.email='builder@local' commit -m "apply bold_is_bright patch on v${ver}" >/dev/null 2>&1 || true
           # restore packaging files that only live on master
-          for f in PKGBUILD .github/workflows/arch-build.yml; do
+          for f in PKGBUILD .github/workflows/arch-build.yml bold-is-bright.patch; do
             git show "master:$f" > "$f" 2>/dev/null || true
           done
           git log --oneline -3
