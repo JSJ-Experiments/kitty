@@ -67,6 +67,9 @@ jobs:
             echo "ERROR: background is being brightened (bg fix missing)" >&2
             exit 1
           fi
+          # sanity: tab-bar interactions are present
+          grep -q "tab_bar_hover_os_window_id" kitty/mouse.c
+          grep -q "tab_bar_pending_pixels_y" kitty/mouse.c
           # commit the patched tree so makepkg builds the right thing
           git add -A
           git -c user.name='builder' -c user.email='builder@local' commit -m "apply bold_is_bright patch on v${ver}" >/dev/null 2>&1 || true
