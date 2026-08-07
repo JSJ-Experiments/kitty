@@ -40,6 +40,9 @@ makedepends=(
     'libxrandr'
     'simde'
     'python-sphinx'
+    'python-sphinx-copybutton'
+    'python-sphinx-inline-tabs'
+    'python-sphinxext-opengraph'
     'ttf-nerd-fonts-symbols-mono'
     'wayland-protocols'
 )
