@@ -953,8 +953,9 @@ handle_tab_bar_mouse(int button, int modifiers, int action) {
         if (w) w->tab_bar_data_updated = false;
         return;
     }
-    // dont report motion events, as they are expensive and useless
-    if (w && (button > -1 || global_state.tab_being_dragged.id)) {
+    // Custom tab bars can use motion events for hover feedback. The stock
+    // Python handler still returns immediately for ordinary non-drag motion.
+    if (w) {
         call_boss(handle_tab_bar_mouse, "Kddiii", w->id, w->mouse_x, w->mouse_y, button, modifiers, action);
     }
 }
@@ -1355,6 +1356,20 @@ mouse_event(const int button, int modifiers, int action) {
     w = r.window; window_idx = r.window_idx;
     set_currently_hovered_window(w && !r.window_border && !r.in_title_bar ? w->id : 0, modifiers, true);
 
+    // Remember whether ordinary pointer motion was last inside this OS
+    // window's tab bar. On the first motion after leaving, send one final
+    // tab-bar motion event with the new (outside) coordinates so a custom
+    // Python tab bar can clear its hover highlight instead of leaving it stuck.
+    static id_type tab_bar_hover_os_window_id = 0;
+    if (button < 0) {
+        if (r.in_tab_bar) {
+            tab_bar_hover_os_window_id = osw->id;
+        } else if (tab_bar_hover_os_window_id == osw->id && !global_state.tab_being_dragged.id) {
+            handle_tab_bar_mouse(button, modifiers, action);
+            tab_bar_hover_os_window_id = 0;
+        }
+    }
+
     if (r.in_tab_bar || global_state.tab_being_dragged.id) {
         mouse_cursor_shape = POINTER_POINTER;
         handle_tab_bar_mouse(button, modifiers, action);
@@ -1497,6 +1512,33 @@ scroll_event(const GLFWScrollEvent *ev) {
         osw->mouse_y = mouse_y * osw->viewport_y_ratio;
     }
     MouseRegion r = mouse_region(false, true);
+
+    // The tab bar has no Screen/Window to receive scroll events, so normally
+    // wheel movement over it is discarded below. Expose vertical wheel
+    // movement to TabManager.handle_tab_bar_mouse() as synthetic button 4/5
+    // presses. A custom tab_bar.py can then use these to cycle tabs.
+    if (r.in_tab_bar) {
+        static double tab_bar_pending_pixels_y = 0.0;
+        // Do not let inertial/momentum scrolling race through many tabs after
+        // the user's fingers have left the touchpad. Physical wheel/touchpad
+        // input arrives with GLFW_NO_MOMENTUM_DATA.
+        if (ev->momentum_type == GLFW_NO_MOMENTUM_DATA && ev->y_offset != 0.0) {
+            int s = scale_scroll(
+                NO_TRACKING,
+                ev->y_offset,
+                ev->offset_type,
+                &tab_bar_pending_pixels_y,
+                osw->fonts_data->fcm.cell_height);
+            if (s) {
+                handle_tab_bar_mouse(
+                    s > 0 ? GLFW_MOUSE_BUTTON_4 : GLFW_MOUSE_BUTTON_5,
+                    ev->keyboard_modifiers,
+                    GLFW_PRESS);
+            }
+        }
+        return;
+    }
+
     Window *w = r.window;
     if (!w && !r.in_tab_bar) {
         // fallback to last active window
