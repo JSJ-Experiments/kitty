@@ -84,6 +84,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          ver="${{ steps.archver.outputs.pkgver }}"
+          # package the patched tree as the source tarball makepkg expects
+          tar --exclude=.git --exclude=dist --exclude=src --exclude=pkg -czf "$GITHUB_WORKSPACE/kitty-$ver.tar.gz" -C "$GITHUB_WORKSPACE" .
+          ls -la "$GITHUB_WORKSPACE/kitty-$ver.tar.gz"
           useradd --create-home --shell /bin/bash builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
           printf 'builder ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/builder
