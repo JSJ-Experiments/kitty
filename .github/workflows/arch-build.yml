@@ -133,6 +133,7 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          files: ${{ github.workspace }}/dist/*
           tag_name: arch-${{ steps.archver.outputs.pkgver }}-${{ steps.archver.outputs.pkgrel }}
           name: kitty ${{ steps.archver.outputs.pkgver }}-${{ steps.archver.outputs.pkgrel }} (bold_is_bright)
           target_commitish: ${{ github.sha }}
